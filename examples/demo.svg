@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="720" viewBox="0 0 900 720" fill="none">
+  <!-- Entirely synthetic example; no customer document content. -->
+  <rect width="900" height="720" fill="white"/>
+  <text fill="#202020" font-family="Inter" font-size="30" font-weight="700"><tspan x="40" y="54">Figma SVG → PDF / 日本語サンプル</tspan></text>
+  <g clip-path="url(#table)">
+    <rect x="40" y="88" width="620" height="45" fill="#242424"/>
+    <rect x="40" y="133" width="620" height="90" fill="#eeeeee"/>
+    <text fill="white" font-family="Noto Sans JP" font-size="18" font-weight="700"><tspan x="58" y="118">番号</tspan><tspan x="142" y="118">サンプルの表</tspan></text>
+    <text fill="#202020" font-family="Noto Sans JP" font-size="16"><tspan x="58" y="164">1</tspan><tspan x="142" y="164">文字と図形を拡大して確認できます。</tspan><tspan x="142" y="196">この文章は公開用に作成した例です。</tspan></text>
+  </g>
+  <g filter="url(#shadowA)">
+    <rect width="240" height="240" transform="translate(40 270)" fill="#ffd979"/>
+    <text fill="#292415" font-family="Inter" font-size="16" font-weight="500" style="white-space:pre"><tspan x="60" y="312">サンプルの付箋 A</tspan><tspan x="60" y="340">文字は検索できます。</tspan></text>
+    <text fill="#292415" font-family="Inter" font-size="16" font-weight="500"><tspan x="60" y="386"><a href="https://example.com/one">🔗Source</a></tspan></text>
+    <text fill="#292415" fill-opacity="0.5" font-family="Inter" font-size="12" font-weight="500"><tspan x="60" y="484">Demo Author</tspan></text>
+  </g>
+  <g filter="url(#shadowB)">
+    <rect width="240" height="240" transform="translate(330 570)" fill="#a9e4b9"/>
+    <text fill="#203026" font-family="Inter" font-size="16" font-weight="500"><tspan x="350" y="612">ページ外の付箋 B</tspan><tspan x="350" y="640">全体が収まる範囲へ拡張。</tspan></text>
+    <text fill="#203026" font-family="Inter" font-size="16" font-weight="500"><tspan x="350" y="686"><a href="https://example.com/two">🔗Source</a></tspan></text>
+    <text fill="#203026" fill-opacity="0.5" font-family="Inter" font-size="12" font-weight="500"><tspan x="350" y="784">Demo Author</tspan></text>
+  </g>
+  <path d="M290 420 C320 420 300 560 320 600" stroke="#555555" stroke-width="3"/>
+  <defs>
+    <clipPath id="table"><rect x="40" y="88" width="620" height="135"/></clipPath>
+    <filter id="shadowA" x="30" y="268" width="260" height="260" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="8"/><feGaussianBlur stdDeviation="5"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.12 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="shadowAResult"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="shadowAResult" result="shape"/>
+    </filter>
+    <filter id="shadowB" x="320" y="568" width="260" height="260" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="8"/><feGaussianBlur stdDeviation="5"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.12 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="shadowBResult"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="shadowBResult" result="shape"/>
+    </filter>
+  </defs>
+</svg>

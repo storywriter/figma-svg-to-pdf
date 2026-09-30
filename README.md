@@ -1,0 +1,104 @@
+# figma-svg-to-pdf
+
+Figmaから書き出した大きなSVGを、**全体が1ページに収まるPDF**へローカルで変換するCLIです。日本語の表や、影付き付箋を大量に含むSVGを対象にしています。
+
+文字・基本図形をベクトルで保持し、クリック可能なテキストリンクを復元します。文字の欠落やページ範囲を検査してからPDFを保存します。Illustrator、Figma API、ブラウザーは不要です。
+
+## セットアップ
+
+Python 3.11以上が必要です。macOSとLinuxをCIで検証しています。
+
+```sh
+git clone https://github.com/storywriter/figma-svg-to-pdf.git
+cd figma-svg-to-pdf
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install .
+figma-svg-to-pdf fonts
+```
+
+`fonts` は初回セットアップです。Inter / Noto Sans JP / Noto Sans Symbols 2 / Noto EmojiをGoogle Fontsの固定コミットから取得し、SHA-256を検証してユーザーのキャッシュへ保存します。可変フォントは通常・Medium・Boldの静的フォントに変換します。初回は数分かかることがあります。
+
+フォントの取得後、**変換処理ではネットワークを使用しません**。SVG内の外部画像や外部CSSは読み込まずエラーにします。ハイパーリンクのURLはPDFにコピーするだけで、アクセスしません。
+
+## 変換
+
+```sh
+figma-svg-to-pdf ~/Downloads/diagram.svg -o ~/Downloads/diagram.pdf
+```
+
+入力SVGと同じ場所にPDFを保存する場合は、出力先を省略できます。
+
+```sh
+figma-svg-to-pdf ~/Downloads/diagram.svg
+```
+
+元のSVGは変更しません。PDFと同じ場所に `diagram.audit.json` を作成します。既存の出力を置き換える場合だけ `--overwrite` を指定してください。
+
+公開用の人工サンプルで試せます。サンプルには元のページ範囲を超えた付箋があり、変換後は全体が収まります。
+
+```sh
+figma-svg-to-pdf examples/demo.svg -o /tmp/demo.pdf
+```
+
+### 大きさ・フォントを指定する
+
+```sh
+# 縦横をそれぞれ1/10にする（文字・図形のベクトル情報を保持）
+figma-svg-to-pdf diagram.svg -o diagram.pdf --scale 0.1
+
+# 元データで使用した静的TTF/OTFフォントを優先する
+figma-svg-to-pdf diagram.svg --font-dir "$HOME/Library/Fonts"
+
+# キャッシュを任意の場所に置く
+figma-svg-to-pdf fonts --directory ./local/fonts
+figma-svg-to-pdf diagram.svg --font-cache ./local/fonts
+```
+
+`--scale` はSVGの1単位を何PDFポイントにするかを指定します。SVGのpxと印刷上のptを等しい物理寸法にする設定ではありません。未指定時は長辺が10,000ポイント以下となる `1, 1/2, 1/3, ...` を選びます。PDFの各辺が14,400ポイントを超える指定は拒否します。
+
+元のviewBoxと描画要素の保守的な外接範囲の和集合を使い、その周囲に2単位の余白を追加します。塗り・線・文字・変形・フィルター領域を考慮します。元のフレーム内の余白は保持し、クリップされた内容の範囲も保守的に扱うため、余白が広めになる場合があります。
+
+## 処理内容
+
+1. SVGとフォントを読み込み、各文字を実際に収録しているフォントへ明示的に割り当てます。Interに日本語が含まれていない場合はNoto Sans JPを使います。
+2. ページ範囲と縮尺を決めます。
+3. 不透明な長方形とその内部の文字からなるFigma付箋では、影だけを画像化して共有します。本文と図形はベクトルのままです。
+4. SVGをPDFへ変換し、テキストリンクをPDF注釈として復元します。開いたときの表示はページ全体に合わせます。
+5. 1ページであること、ページ寸法、リンクの数とURL、空白を除く各文字の出現回数を照合します。
+
+macOSではローカルのApple Color Emojiを使って `🔗` の色付き表示を補います。フォントファイルは配布しません。`--monochrome-emoji` を付けると他OSと同様にNoto Emojiで表示します。
+
+`audit.json` には入力・出力・使用フォントのSHA-256、縮尺、ページ寸法、文字数、リンク数、影の最適化数、検査結果が入ります。本文やリンク先一覧は出力しません。同じ入力・フォント・バージョン・オプションで再実行できますが、PDFのバイト単位の同一性は保証しません。
+
+## 対応範囲と確認事項
+
+このツールは**静的なFigma SVG書き出し向け**です。任意のSVGを完全に扱う汎用変換器ではありません。
+
+- 明示的な座標、基本図形、パス、グループの変形、埋め込み画像、クリップ、横書きテキストを扱います。
+- テキストの `text-anchor` は `start`、通常書体を対象にしています。中央・右寄せのアンカー、斜体、縦書き、右から左への文字、テキストパス、文字ごとの回転、複数値のx/y、ネストしたSVG、元SVG内の `use` / `symbol` / マーカーは対象外です。必要な部分をFigmaでアウトライン化して書き出してください。
+- ハイパーリンクは、位置を計算できるテキストを含む `a` 要素が対象です。http / https / mailtoを保持します。
+- 元のフォントが異なると文字幅や見た目も変わります。`--font-dir` で必要な静的フォントを追加し、拡大表示を確認してください。監査ファイルにフォントの補完内容を記録します。
+- 影の最適化は、文字が不透明な矩形内に収まり、認識できるFigmaのドロップシャドウ構造である場合に限ります。条件を満たさないフィルターはレンダラーに渡すため、文字も画像化されることがあります。その場合は通常、文字照合が失敗します。
+- 非表示の文字、クリップで完全に隠れた文字、未対応のフォントやフィルターも照合失敗の原因になります。失敗時は監査ファイルだけを残し、PDFを新規保存・置換しません。
+- `--keep-filters` は影の最適化を無効にします。`--allow-text-differences` は文字照合の差分を明示的に許可する例外用オプションです。使用時は監査結果を `text-differences-accepted` とし、正常一致と区別します。
+- 文字の出現回数の一致は、見た目・読み順・改行・重なりの完全一致を証明しません。最終PDFは全体表示と必要箇所の拡大表示を確認してください。影とカラー絵文字は画像なので、極端な拡大では画像の解像度に依存します。
+- 数千個の付箋や大量の文字があるSVGでは、処理に数分以上かかる場合があります。進捗表示が `Rendering vector PDF` でも処理は継続しています。
+
+## 開発・検証
+
+```sh
+python -m pip install '.[dev]'
+figma-svg-to-pdf fonts
+python -m pytest
+ruff check src tests
+python -m build
+```
+
+別のフォントキャッシュでテストする場合は `FIGMA_PDF_TEST_FONTS` 環境変数を指定します。テストでは日本語、影の共有、文字照合、リンク、ページ外の図形、大きなページ、上書き防止を確認します。GitHubにはコードと人工サンプルのみを含め、利用者のSVG・PDF・監査ファイル・フォントを含めません。
+
+## 使用ライブラリとライセンス
+
+コードはMIT Licenseです。変換は [vl-convert](https://github.com/vega/vl-convert)（SVGの描画・PDF生成）と [pypdf](https://github.com/py-pdf/pypdf)（PDF編集・照合）を使います。フォント処理にはfontToolsと [HarfBuzz](https://github.com/harfbuzz/uharfbuzz)、カラーリンクアイコンの配置にはReportLab、パスの外接範囲にはsvgpathtoolsを使用します。直接依存のバージョンは `pyproject.toml` で固定しています。
+
+セットアップ対象フォントのライセンスはSIL Open Font License 1.1です。元のフォントとライセンス文書の固定URL・チェックサムは [font_manifest.json](src/figma_svg_to_pdf/font_manifest.json) に記録し、セットアップ時にライセンス文書も保存します。

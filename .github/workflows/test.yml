@@ -1,0 +1,33 @@
+name: Test
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.11'
+          - os: macos-latest
+            python: '3.13'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: python -m pip install '.[dev]'
+      - uses: actions/cache@v4
+        with:
+          path: .test-fonts
+          key: fonts-${{ runner.os }}-${{ hashFiles('src/figma_svg_to_pdf/font_manifest.json', 'src/figma_svg_to_pdf/fonts.py') }}
+      - run: figma-svg-to-pdf fonts --directory .test-fonts
+      - run: python -m pytest -q
+        env:
+          FIGMA_PDF_TEST_FONTS: .test-fonts
+      - run: ruff check src tests
+      - run: python -m build
