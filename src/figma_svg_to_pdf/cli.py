@@ -1,4 +1,5 @@
 import argparse
+import math
 from pathlib import Path
 import sys
 
@@ -6,6 +7,18 @@ from . import __version__
 from .convert import Options, convert
 from .fonts import default_cache, install_fonts
 from .model import ConversionError
+
+
+def scale_argument(value):
+    if value == "auto":
+        return None
+    try:
+        scale = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("scale must be 'auto' or a positive number") from None
+    if not math.isfinite(scale) or scale <= 0:
+        raise argparse.ArgumentTypeError("scale must be 'auto' or a finite positive number")
+    return scale
 
 
 def main(argv=None):
@@ -26,8 +39,11 @@ def main(argv=None):
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("--font-cache", type=Path, default=default_cache())
     parser.add_argument("--font-dir", type=Path, action="append", default=[], help="additional static TTF/OTF font directory (repeatable)")
-    parser.add_argument("--scale", type=float, help="PDF points per SVG unit; default: automatic reciprocal integer")
-    parser.add_argument("--max-page-size", type=float, default=10000, help="automatic maximum page side in points (default: 10000)")
+    parser.add_argument("--scale", type=scale_argument, metavar="auto|NUMBER",
+                        help="default: auto, fit the complete SVG within --max-page-size; "
+                             "a number overrides this with PDF points per SVG unit")
+    parser.add_argument("--max-page-size", type=float, default=10000,
+                        help="maximum page side in PDF points for automatic scaling only (default: 10000)")
     parser.add_argument("--padding", type=float, default=2, help="extra SVG units around the complete bounds")
     parser.add_argument("--monochrome-emoji", action="store_true", help="use portable monochrome Noto Emoji instead of the macOS color link icon")
     parser.add_argument("--keep-filters", action="store_true", help="disable shadow optimization; filtered text may be rasterized")

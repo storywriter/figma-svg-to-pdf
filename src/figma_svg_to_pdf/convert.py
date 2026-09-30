@@ -111,10 +111,24 @@ def convert(source, destination, options=None, audit_path=None, log=print):
         raise ConversionError("Internal error: font normalization changed the source text")
     bounds, runs = document_geometry(root, fonts)
     page_box = source_viewport.union(bounds).pad(options.padding)
-    scale = options.scale or 1/max(1, math.ceil(max(page_box.width, page_box.height)/options.max_page_size))
+    if options.scale is None:
+        # Use the complete padded bounds, not just the original Figma frame.
+        # Choose the largest 1/N that fits the target, without enlarging small SVGs.
+        divisor = max(1, math.ceil(max(page_box.width, page_box.height)/options.max_page_size))
+        scale = 1/divisor
+        scale_mode = "auto"
+        scale_detail = f"auto, 1/{divisor}; maximum side {options.max_page_size:g} pt"
+    else:
+        scale = options.scale
+        scale_mode = "manual"
+        scale_detail = "manual override"
     page_size = (page_box.width*scale, page_box.height*scale)
-    if max(page_size) > 14400 or min(page_size) < 1:
-        raise ConversionError("PDF dimensions must be between 1 and 14400 points; choose a smaller scale")
+    if max(page_size) > 14400:
+        raise ConversionError("PDF dimensions exceed 14400 points; omit --scale for automatic sizing "
+                              "or choose a smaller scale")
+    if min(page_size) < 1:
+        raise ConversionError("A PDF side would be smaller than 1 point; increase the scale or padding "
+                              "while keeping both sides at most 14400 points")
     root.set("viewBox", " ".join(f"{v:.10g}" for v in page_box.viewbox()))
     root.set("width", f"{page_size[0]:.10g}")
     root.set("height", f"{page_size[1]:.10g}")
@@ -127,7 +141,10 @@ def convert(source, destination, options=None, audit_path=None, log=print):
             link_boxes[run.link] = link_boxes[run.link].union(box) if run.link in link_boxes else box
     if set(anchors) != set(link_boxes):
         raise ConversionError("Each hyperlink must contain visible, positioned text")
-    log(f"Page: {page_size[0]:.2f} × {page_size[1]:.2f} pt; scale {scale:g}; "
+    log(f"SVG viewport: {source_viewport.width:g} × {source_viewport.height:g} units; "
+        f"complete bounds with padding: {page_box.width:g} × {page_box.height:g} units")
+    log(f"Scale: {scale:g} ({scale_detail})")
+    log(f"Page: {page_size[0]:.2f} × {page_size[1]:.2f} pt; "
         f"text {sum(expected.values()):,} characters; links {len(anchors):,}")
     stats = {"optimized_cards": 0, "shadow_tiles": 0,
              "unoptimized_filters": sum(bool(e.get("filter")) for e in root.iter())}
@@ -187,7 +204,8 @@ def convert(source, destination, options=None, audit_path=None, log=print):
             "pdf_sha256": sha256(candidate.read_bytes()).hexdigest(),
             "pages": len(check.pages), "page_points": list(page.mediabox),
             "source_viewbox": source_viewport.viewbox(), "output_viewbox": page_box.viewbox(),
-            "scale": scale, "source_nonspace_characters": sum(expected.values()),
+            "scale": scale, "scale_mode": scale_mode, "max_page_size": options.max_page_size,
+            "source_nonspace_characters": sum(expected.values()),
             "pdf_nonspace_characters": sum(actual.values()), "text_inventory_match": text_ok,
             "missing_codepoints": {f"U+{ord(c):04X}": n for c, n in (expected-actual).items()},
             "extra_codepoints": {f"U+{ord(c):04X}": n for c, n in (actual-expected).items()},

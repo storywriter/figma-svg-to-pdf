@@ -1,9 +1,11 @@
 from pathlib import Path
+import json
 import os
 
 from pypdf import PdfReader
 import pytest
 
+from figma_svg_to_pdf.cli import main
 from figma_svg_to_pdf.convert import Options, convert
 from figma_svg_to_pdf.fonts import default_cache
 from figma_svg_to_pdf.model import Box, ConversionError, point, transform
@@ -59,12 +61,93 @@ def test_transformed_content_outside_viewport_is_included(tmp_path, font_cache):
     assert x < -40 and y == -2 and x+w >= 100 and y+h > 230
 
 
-def test_large_page_is_scaled_to_compatible_dimensions(tmp_path, font_cache):
-    source = write_svg(tmp_path, '<rect width="50000" height="92000" fill="white"/>',
-                       'viewBox="0 0 50000 92000"')
+@pytest.mark.parametrize("width,height,scale", [
+    (50000, 92000, .1),
+    (92000, 50000, .1),
+    (20000, 32000, .25),
+    (1200, 800, 1),
+])
+def test_automatic_scale_preserves_complete_page_and_links(tmp_path, font_cache, width, height, scale):
+    source = write_svg(tmp_path, f'<rect width="{width}" height="{height}" fill="white"/>'
+                       f'<text font-family="Inter" font-size="12" x="40" y="{height-40}">'
+                       '<a href="https://example.com/end">End</a></text>',
+                       f'viewBox="0 0 {width} {height}"')
     report = convert(source, tmp_path/"out.pdf", Options(font_cache=font_cache), log=lambda _: None)
-    assert report["scale"] == .1
-    assert max(report["page_points"]) < 10000
+    assert report["scale"] == scale
+    assert report["scale_mode"] == "auto"
+    assert report["max_page_size"] == 10000
+    assert report["page_points"] == pytest.approx([0, 0, (width+4)*scale, (height+4)*scale])
+    assert max(report["page_points"]) <= 10000
+    page = PdfReader(tmp_path/"out.pdf").pages[0]
+    assert page.extract_text().strip() == "End"
+    assert report["source_links"] == report["pdf_links"] == 1
+    rect = page["/Annots"][0].get_object()["/Rect"]
+    assert 0 <= rect[0] < rect[2] <= page.mediabox.width
+    assert 0 <= rect[1] < rect[3] <= page.mediabox.height
+
+
+@pytest.mark.parametrize("flags,scale,mode,maximum", [
+    ([], .25, "auto", 10000),
+    (["--scale", "auto"], .25, "auto", 10000),
+    (["--max-page-size", "5000"], 1/7, "auto", 5000),
+    (["--scale", "0.1"], .1, "manual", 10000),
+    (["--scale", "0.1", "--max-page-size", "1000"], .1, "manual", 1000),
+])
+def test_cli_reports_scale_and_uses_viewbox_units(tmp_path, font_cache, capsys, flags, scale, mode, maximum):
+    source = write_svg(tmp_path, '<text font-family="Inter" x="10" y="30">Scale</text>',
+                       'width="200" height="320" viewBox="-100 -200 20000 32000"')
+    output = tmp_path/"out.pdf"
+    assert main([str(source), "-o", str(output), "--font-cache", str(font_cache),
+                 "--padding", "0", *flags]) == 0
+    report = json.loads(output.with_suffix(".audit.json").read_text())
+    assert report["status"] == "passed"
+    assert report["scale"] == scale
+    assert report["scale_mode"] == mode
+    assert report["max_page_size"] == maximum
+    assert report["source_viewbox"] == report["output_viewbox"] == [-100, -200, 20000, 32000]
+    assert report["page_points"] == pytest.approx([0, 0, 20000*scale, 32000*scale])
+    message = capsys.readouterr().out
+    assert "SVG viewport: 20000 × 32000 units" in message
+    assert "complete bounds with padding: 20000 × 32000 units" in message
+    assert f"Scale: {scale:g} ({mode}" in message
+    assert "Page:" in message
+
+
+def test_automatic_scale_includes_content_outside_original_frame(tmp_path, font_cache):
+    source = write_svg(tmp_path, '<g transform="translate(-100 50000)">'
+                       '<rect width="400" height="1000"/></g>')
+    report = convert(source, tmp_path/"out.pdf", Options(font_cache=font_cache), log=lambda _: None)
+    assert report["source_viewbox"] == [0, 0, 100, 100]
+    assert report["output_viewbox"] == [-102, -2, 404, 51004]
+    assert report["scale"] == 1/6
+    assert report["page_points"] == pytest.approx([0, 0, 404/6, 51004/6])
+
+
+@pytest.mark.parametrize("padding,scale", [(0, 1), (2, .5)])
+def test_automatic_scale_accounts_for_padding_at_page_limit(tmp_path, font_cache, padding, scale):
+    source = write_svg(tmp_path, '<rect width="100" height="10000"/>',
+                       'width="100" height="10000"')
+    report = convert(source, tmp_path/"out.pdf", Options(font_cache=font_cache, padding=padding),
+                     log=lambda _: None)
+    assert report["scale"] == scale
+    assert max(report["page_points"]) <= 10000
+
+
+@pytest.mark.parametrize("value", ["not-a-scale", "nan", "inf", "0", "-1"])
+def test_cli_invalid_scale_has_actionable_error(tmp_path, capsys, value):
+    with pytest.raises(SystemExit) as exc:
+        main([str(tmp_path/"source.svg"), "--scale", value])
+    assert exc.value.code == 2
+    assert "scale must be 'auto' or" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("scale,error", [(1, "automatic sizing"), (.0000001, "increase the scale")])
+def test_manual_scale_rejects_incompatible_page_size(tmp_path, font_cache, scale, error):
+    source = write_svg(tmp_path, "", 'viewBox="0 0 20000 32000"')
+    output = tmp_path/"out.pdf"
+    with pytest.raises(ConversionError, match=error):
+        convert(source, output, Options(font_cache=font_cache, scale=scale), log=lambda _: None)
+    assert not output.exists()
 
 
 def test_missing_text_prevents_publishing(tmp_path, font_cache):
